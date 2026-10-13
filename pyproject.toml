@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=80,<83"]
+build-backend = "setuptools.build_meta"
+
+# Component-development metadata only. Public Python publication is the
+# aggregate "zog" distribution assembled by release-build.
+[project]
+name = "build-trace"
+dynamic = ["version"]
+description = "Read-only inspection of Zog build evidence"
+requires-python = ">=3.10"
+license = "BSD-3-Clause OR GPL-3.0-only"
+
+[project.scripts]
+build-trace = "zog.build_trace.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+license-files = ["LICENSE", "LICENSES/*.txt", "THIRD-PARTY-NOTICES.md"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["zog.build_trace*"]
+namespaces = true
+
+[tool.setuptools.dynamic]
+version = {attr = "zog.build_trace.__version__"}

@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "program": "build-trace",
+  "python_package": "zog.build_trace",
+  "version": "0.13.0",
+  "scripts": {
+    "build-trace": "zog.build_trace.cli:main"
+  },
+  "component_dependencies": [
+    "box-control",
+    "build-record"
+  ],
+  "external_dependencies": [],
+  "package_data": [],
+  "license_notice_paths": [
+    "LICENSE",
+    "LICENSES/BSD-3-Clause.txt",
+    "LICENSES/GPL-3.0-only.txt",
+    "THIRD-PARTY-NOTICES.md"
+  ]
+}

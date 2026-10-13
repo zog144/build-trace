@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [unstable, main]
+  pull_request:
+    branches: [unstable, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core:
+    name: Core tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - name: Check out build-trace
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Verify clean public source boundary
+        run: |
+          test ! -e COPYRIGHT
+          test ! -e AGENTS.md
+          test ! -e publication
+          test ! -e tools
+          test -f LICENSE
+          test -f LICENSES/BSD-3-Clause.txt
+          test -f LICENSES/GPL-3.0-only.txt
+      - name: Install build-trace component
+        run: python -m pip install .
+      - name: Run repository-only suite
+        run: python -m unittest discover -s tests -v
+
+  independent-consumer:
+    name: Independent consumer (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    steps:
+      - name: Check out build-trace
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install build-trace component
+        run: python -m pip install .
+      - name: Run consumer outside the source checkout
+        working-directory: ${{ runner.temp }}
+        run: python "$GITHUB_WORKSPACE/tests/test_independent_consumer.py" -v
+
+  package-artifacts:
+    name: Namespace package artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out build-trace
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Audit aggregate-ready artifacts
+        run: |
+          python - <<'PY'
+          import glob
+          import tarfile
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          sdist = glob.glob("dist/*.tar.gz")
+          assert len(wheel) == 1, wheel
+          assert len(sdist) == 1, sdist
+
+          with zipfile.ZipFile(wheel[0]) as archive:
+              names = set(archive.namelist())
+              assert "zog/build_trace/__init__.py" in names
+              assert "zog/__init__.py" not in names
+              assert not any(name.startswith(("tests/", "acceptance/")) for name in names)
+              entry = next(name for name in names if name.endswith(".dist-info/entry_points.txt"))
+              text = archive.read(entry).decode()
+              assert "build-trace = zog.build_trace.cli:main" in text
+
+          with tarfile.open(sdist[0], "r:gz") as archive:
+              names = archive.getnames()
+              prefix = names[0].split("/", 1)[0]
+              relative = {
+                  name[len(prefix) + 1:] if name.startswith(prefix + "/") else name
+                  for name in names
+              }
+              assert "src/zog/build_trace/__init__.py" in relative
+              assert "src/zog/__init__.py" not in relative
+              assert "tests/test_namespace_migration.py" in relative
+              assert "acceptance/integrate_observe_consumer.py" in relative
+              assert "docs/build-trace/schema.md" in relative
+              assert "LICENSE" in relative
+              assert "LICENSES/BSD-3-Clause.txt" in relative
+              assert "LICENSES/GPL-3.0-only.txt" in relative
+              assert "THIRD-PARTY-NOTICES.md" in relative
+              assert "COPYRIGHT" not in relative
+          PY
+
+  public-build-record-contract:
+    name: Public build-record verification history (Python 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out build-trace
+        uses: actions/checkout@v7
+      - name: Check out reviewed public build-record
+        uses: actions/checkout@v7
+        with:
+          repository: zog144/build-record
+          ref: a866c9c4b0dd385045f00ce2de7d809f5b67c104
+          path: companions/build-record
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install build-trace and public companion
+        run: |
+          python -m pip install .
+          python -m pip install ./companions/build-record
+      - name: Verify exact public companion and zero-skips contract
+        run: |
+          test "$(git -C companions/build-record rev-parse HEAD)" = "a866c9c4b0dd385045f00ce2de7d809f5b67c104"
+          python -m unittest discover -s tests -p 'test_verification_history_contract.py' -v 2>&1 | tee /tmp/build-trace-public-history.log
+          ! grep -Eq 'skipped=[1-9][0-9]*' /tmp/build-trace-public-history.log
